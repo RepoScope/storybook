@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 
 export interface IErrorWithStdErrAndStdOut {
@@ -20,19 +21,32 @@ export function cleanPaths(str: string, separator: string = path.sep): string {
     return str;
   }
 
-  const stack = process.cwd().split(separator);
+  const separators = Array.from(new Set([separator, `/`, `\\`]));
+  const basePaths = [process.cwd(), os.homedir()].filter(Boolean);
 
-  while (stack.length > 1) {
-    const currentPath = stack.join(separator);
-    const currentRegex = new RegExp(regexpEscape(currentPath), `gi`);
-    str = str.replace(currentRegex, `$SNIP`);
+  const targets = basePaths.flatMap((basePath) =>
+    separators.map((sep) => ({
+      separator: sep,
+      normalizedPath: basePath.split(/[\\/]/).join(sep),
+    }))
+  );
 
-    const currentPath2 = stack.join(separator + separator);
-    const currentRegex2 = new RegExp(regexpEscape(currentPath2), `gi`);
-    str = str.replace(currentRegex2, `$SNIP`);
+  targets.forEach(({ separator: sep, normalizedPath }) => {
+    const stack = normalizedPath.split(sep);
 
-    stack.pop();
-  }
+    while (stack.length > 1) {
+      const currentPath = stack.join(sep);
+      const currentRegex = new RegExp(regexpEscape(currentPath), `gi`);
+      str = str.replace(currentRegex, `$SNIP`);
+
+      const doubledSeparatorPath = stack.join(sep + sep);
+      const doubledSeparatorRegex = new RegExp(regexpEscape(doubledSeparatorPath), `gi`);
+      str = str.replace(doubledSeparatorRegex, `$SNIP`);
+
+      stack.pop();
+    }
+  });
+
   return str;
 }
 
@@ -51,7 +65,8 @@ export function sanitizeError(error: Error, pathSeparator: string = path.sep) {
     const errorString = cleanPaths(JSON.stringify(error), pathSeparator);
 
     return JSON.parse(errorString);
-  } catch (err: any) {
-    return `Sanitization error: ${err?.message}`;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return `Sanitization error: ${message}`;
   }
 }
